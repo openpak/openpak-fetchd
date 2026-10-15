@@ -1,0 +1,9 @@
+# make
+/build/
+/openpak-fetchd.elf
+/openpak-fetchd.nso
+/openpak-fetchd.nsp
+/openpak-fetchd.npdm
+/openpak-fetchd.map
+# make test (default test directory)
+/test/out/
