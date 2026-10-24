@@ -35,10 +35,23 @@ typedef struct {
 extern const fd_pinned_key *fd_keys;
 extern int fd_key_count;
 
+#define FD_IP_MAX 32   // switch ip redirects kept from a ceiling (ams_mitm's bsd mitm reads as many)
+
+// One signed ip redirect (the ceiling's "ip_redirects", docs/signed-ceiling.md): a title that dials
+// `from`, a hard-coded IPv4 address:port, is connected to `to` instead.
+typedef struct {
+    bool tcp;            // "proto": tcp, else udp
+    char title[17];      // 16 hex digits, or "" when the rule names none (a console skips it)
+    char from[24];       // "a.b.c.d:port"
+    char to[24];
+} fd_ip_redirect;
+
 typedef struct {
     long long version;
     int       count;
     char      families[FD_FAMILIES_MAX][FD_FAMILY_MAX];   // switch families only
+    int       ip_count;
+    fd_ip_redirect ip[FD_IP_MAX];                        // switch ip redirects only
 } fd_ceiling;
 
 typedef struct {
@@ -49,6 +62,12 @@ typedef struct {
 } fd_stats;
 
 bool fd_family_valid(const char *family);
+// "a.b.c.d:port", dotted-quad IPv4 without leading zeros, port 1-65535.
+bool fd_ip_endpoint_valid(const char *endpoint);
+// The rules file ams_mitm's bsd mitm reads (/atmosphere/config/openpak/ip_redirects.txt): one
+// "<tcp|udp> <title> <from> <to>" line per switch rule that names a title, after a comment line.
+// Returns the length, or 0 when no rule names a title (the file is then to be removed).
+size_t fd_ip_redirects_text(const fd_ceiling *c, char *out, size_t cap);
 bool fd_ceiling_covers(const fd_ceiling *c, const char *name);
 
 // Verifies an envelope (modified in place: strings are unescaped) and fills out with the

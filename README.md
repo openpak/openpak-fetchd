@@ -15,6 +15,11 @@ Under `/atmosphere`:
 - `openpak-fetchd.log`: log, one line opened, written and closed at a time.
 - `openpak-fetchd/ceiling.version`: last accepted ceiling version (the one-way rule).
 - `openpak-fetchd/dry-block.txt`: the would-be block, written in dry mode.
+- `config/openpak/ip_redirects.txt`: the signed ceiling's switch `ip_redirects` that name a title,
+  one `<tcp|udp> <title> <from> <to>` line each, for the `bsd:u` MITM in OpenPak's boot package
+  (a title that dials a hard-coded address, never a name). It is written only when its text
+  changes and removed when the ceiling lists none. A game reads it when it opens its sockets, so a
+  change applies from the game's next start.
 
 Read only, under `/switch/openpak`: `ceiling.version` (the NRO's own floor) and `server.txt` (the
 user's server address override).

@@ -189,6 +189,40 @@ static int write_plain(const char *path, const void *data, size_t len) {
 
 static void commit_sd(void) { fsdevCommitDevice("sdmc"); }
 
+/* ---- ip redirects ---------------------------------------------------------------------- */
+
+/* The signed ceiling's switch ip redirects, for ams_mitm's bsd mitm (OpenPak's boot package): the
+ * file is rewritten only when its text changes, and removed when the ceiling names no rule with a
+ * title. Written the same way as the hosts files: temp file, then rename. */
+#define IP_REDIRECTS_DIR  ATM "config/openpak"
+#define IP_REDIRECTS_PATH IP_REDIRECTS_DIR "/ip_redirects.txt"
+static char g_ip_text[0x1800];
+static char g_ip_old[0x1800];
+
+static void update_ip_redirects(bool real) {
+    size_t n = fd_ip_redirects_text(&g_ceil, g_ip_text, sizeof(g_ip_text));
+    size_t old = 0;
+    FILE *f = fopen(IP_REDIRECTS_PATH, "rb");
+    bool exists = f != NULL;
+    if (f) { old = fread(g_ip_old, 1, sizeof(g_ip_old), f); fclose(f); }
+    if (n == 0) {
+        if (!exists) { lg("ip redirects: none signed, none installed"); return; }
+        if (!real) { lg("ip redirects: dry, would remove %s", IP_REDIRECTS_PATH); return; }
+        lg("ip redirects: none signed any more, remove %s rc=%d", IP_REDIRECTS_PATH, remove(IP_REDIRECTS_PATH));
+        commit_sd();
+        return;
+    }
+    if (exists && old == n && memcmp(g_ip_old, g_ip_text, n) == 0) { lg("ip redirects: %zu bytes, unchanged", n); return; }
+    if (!real) { lg("ip redirects: dry, would write %zu bytes to %s", n, IP_REDIRECTS_PATH); return; }
+    mkdir(ATM "config", 0777);
+    mkdir(IP_REDIRECTS_DIR, 0777);
+    if (write_plain(IP_REDIRECTS_PATH ".tmp", g_ip_text, n) != 0) { lg("ip redirects: cannot write the temp file; nothing changes"); return; }
+    remove(IP_REDIRECTS_PATH);
+    int r = rename(IP_REDIRECTS_PATH ".tmp", IP_REDIRECTS_PATH);
+    commit_sd();
+    lg("ip redirects: %zu bytes written to %s rc=%d (read when a listed game opens its sockets)", n, IP_REDIRECTS_PATH, r);
+}
+
 /* ---- network -------------------------------------------------------------------------- */
 
 static int connect_ip(const u8 ip[4], u16 port) {
@@ -405,6 +439,8 @@ static bool cycle(int n, long stage) {
         lg("state: call write %s", VERSION_PATH);
         if (write_plain(VERSION_PATH, num, (size_t)nn) != 0) { lg("REFUSED: cannot persist the accepted version; nothing changes"); goto out; }
     }
+
+    update_ip_redirects(real);
 
     if (!https_get(PATH_PROFILE, &body, &blen)) { lg("step 3 fetch: profile not fetched, nothing changes, retry in %llu s", RETRY_SECONDS); transient = true; goto out; }
 

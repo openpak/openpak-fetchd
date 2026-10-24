@@ -284,6 +284,50 @@ static bool ipv4_valid(const char *s) {
     return *s == '\0';
 }
 
+bool fd_ip_endpoint_valid(const char *ep) {
+    const char *colon = strchr(ep, ':');
+    if (!colon || strchr(colon + 1, ':') || colon - ep >= 16) return false;
+    char ip[16];
+    memcpy(ip, ep, (size_t)(colon - ep));
+    ip[colon - ep] = '\0';
+    if (!ipv4_valid(ip)) return false;
+    for (const char *o = ip; *o; ) {   // no leading zeros: "1.2.3.04" is not an address we sign
+        if (o[0] == '0' && o[1] >= '0' && o[1] <= '9') return false;
+        while (*o && *o != '.') o++;
+        if (*o == '.') o++;
+    }
+    const char *p = colon + 1;
+    long v = 0;
+    int digits = 0;
+    if (p[0] == '0') return false;
+    while (*p >= '0' && *p <= '9' && digits < 6) { v = v * 10 + (*p++ - '0'); digits++; }
+    return *p == '\0' && digits > 0 && v >= 1 && v <= 65535;
+}
+
+static bool title_valid(const char *t) {
+    if (strlen(t) != 16) return false;
+    for (; *t; t++)
+        if (!((*t >= '0' && *t <= '9') || (*t >= 'a' && *t <= 'f') || (*t >= 'A' && *t <= 'F'))) return false;
+    return true;
+}
+
+size_t fd_ip_redirects_text(const fd_ceiling *c, char *out, size_t cap) {
+    size_t n = 0;
+    int written = 0;
+    int w = snprintf(out, cap, "# openpak-fetchd: ip redirects from signed ceiling v%lld; do not edit\n", c->version);
+    if (w < 0 || (size_t)w >= cap) return 0;
+    n = (size_t)w;
+    for (int i = 0; i < c->ip_count; i++) {
+        const fd_ip_redirect *r = &c->ip[i];
+        if (!r->title[0]) continue;
+        w = snprintf(out + n, cap - n, "%s %s %s %s\n", r->tcp ? "tcp" : "udp", r->title, r->from, r->to);
+        if (w < 0 || (size_t)w >= cap - n) return 0;
+        n += (size_t)w;
+        written++;
+    }
+    return written ? n : 0;
+}
+
 bool fd_ceiling_covers(const fd_ceiling *c, const char *name) {
     size_t nl = strlen(name);
     for (int i = 0; i < c->count; i++) {
@@ -339,6 +383,37 @@ static bool payload_into(int root, fd_ceiling *out, char *err, int errlen) {
         }
     }
     if (!mine) return fail(err, errlen, "no " PLATFORM " families");
+    // Optional ip_redirects, strict like the families: one bad entry rejects the file.
+    int ipr = jget(root, "ip_redirects");
+    if (ipr >= 0) {
+        if (!jis(ipr, J_OBJ)) return fail(err, errlen, "ip_redirects is not an object");
+        for (int p = g_nodes[ipr].child; p >= 0; p = g_nodes[p].next) {
+            if (!jis(p, J_ARR)) return fail(err, errlen, "ip_redirects %s is not a list", g_nodes[p].key);
+            bool is_mine = strcmp(g_nodes[p].key, PLATFORM) == 0;
+            int first = out->ip_count;
+            for (int e = g_nodes[p].child; e >= 0; e = g_nodes[e].next) {
+                const char *from = jis(e, J_OBJ) ? jstr(e, "from") : NULL;
+                const char *to = jis(e, J_OBJ) ? jstr(e, "to") : NULL;
+                const char *proto = jis(e, J_OBJ) ? jstr(e, "proto") : NULL;
+                int tn = jis(e, J_OBJ) ? jget(e, "title") : -1;
+                const char *title = tn >= 0 ? (jis(tn, J_STR) ? g_nodes[tn].str : NULL) : "";
+                if (!from || !to || !proto || !title || (strcmp(proto, "tcp") != 0 && strcmp(proto, "udp") != 0) ||
+                    !fd_ip_endpoint_valid(from) || !fd_ip_endpoint_valid(to) || (title[0] && !title_valid(title)))
+                    return fail(err, errlen, "ip_redirects %s has a malformed entry", g_nodes[p].key);
+                if (!is_mine) continue;
+                bool tcp = strcmp(proto, "tcp") == 0;
+                for (int i = first; i < out->ip_count; i++)
+                    if (out->ip[i].tcp == tcp && strcmp(out->ip[i].from, from) == 0)
+                        return fail(err, errlen, "ip_redirects %s lists %s %s twice", g_nodes[p].key, proto, from);
+                if (out->ip_count == FD_IP_MAX) return fail(err, errlen, "too many ip redirects");
+                fd_ip_redirect *r = &out->ip[out->ip_count++];
+                r->tcp = tcp;
+                snprintf(r->title, sizeof(r->title), "%s", title);
+                snprintf(r->from, sizeof(r->from), "%s", from);
+                snprintf(r->to, sizeof(r->to), "%s", to);
+            }
+        }
+    }
     return true;
 }
 
