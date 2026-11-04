@@ -69,6 +69,30 @@ static void test_envelope(void) {
     free(e);
 }
 
+static void test_ip_redirects(void) {
+    use_test_key();
+    char err[200];
+    fd_ceiling c;
+    char *e = dupstr(ENV_V12_IP);
+    CHECK(fd_ceiling_verify(e, strlen(e), &c, err, sizeof(err)));
+    CHECK(c.ip_count == 2 && c.ip[0].tcp && strcmp(c.ip[0].from, "192.0.2.7:23001") == 0 &&
+          strcmp(c.ip[0].to, "203.0.113.10:22690") == 0 && strcmp(c.ip[0].title, "0100C6800B934000") == 0 &&
+          !c.ip[1].tcp && c.ip[1].title[0] == '\0');
+    char text[512];
+    size_t n = fd_ip_redirects_text(&c, text, sizeof(text));
+    CHECK(n > 0 && strstr(text, "\ntcp 0100C6800B934000 192.0.2.7:23001 203.0.113.10:22690\n") != NULL);
+    CHECK(strstr(text, "192.0.2.8") == NULL);   // a rule without a title is not a console rule
+    free(e);
+    e = dupstr(ENV_V12_IP_BAD); CHECK(!fd_ceiling_verify(e, strlen(e), &c, err, sizeof(err))); free(e);
+    e = dupstr(ENV_V12_IP_DUP); CHECK(!fd_ceiling_verify(e, strlen(e), &c, err, sizeof(err))); free(e);
+    e = dupstr(ENV_V3);
+    CHECK(fd_ceiling_verify(e, strlen(e), &c, err, sizeof(err)) && c.ip_count == 0 && fd_ip_redirects_text(&c, text, sizeof(text)) == 0);
+    free(e);
+    CHECK(fd_ip_endpoint_valid("255.0.0.1:65535") && !fd_ip_endpoint_valid("256.0.0.1:1") &&
+          !fd_ip_endpoint_valid("1.2.3.4") && !fd_ip_endpoint_valid("1.2.3.4:0") && !fd_ip_endpoint_valid("1.2.3.4:65536") &&
+          !fd_ip_endpoint_valid("1.2.3.4:080") && !fd_ip_endpoint_valid("a.b.c.d:1"));
+}
+
 static void test_version_rule(void) {
     use_test_key();
     char err[200];
@@ -461,6 +485,7 @@ int main(int argc, char **argv) {
     real_count = fd_key_count;
     if (argc >= 3) test_live(argv[1], argv[2], argc >= 4 ? argv[3] : NULL);
     test_envelope();
+    test_ip_redirects();
     test_version_rule();
     test_block();
     test_replace();

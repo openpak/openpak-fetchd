@@ -15,6 +15,7 @@ OpenPak's Switch Boot Updater.
 - Verifies the signed ceiling and switch profile against a pinned Ed25519 key before it writes anything.
 - Refuses a ceiling older than the last accepted one.
 - Writes only the marked OpenPak block, never creates the hosts block, and asks dns_mitm to reload.
+- Also writes `/atmosphere/config/openpak/ip_redirects.txt` from the signed ceiling's switch `ip_redirects` that name a title (one `<tcp|udp> <title> <from> <to>` line each), for the `bsd:u` MITM in the boot package. It is written only when its text changes and removed when the ceiling lists none; a game reads it at its next start.
 
 ## Build
 
