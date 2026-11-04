@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.1.1 — 2026-11-04
+
+- maintenance
+
 ## 0.1.0 - 2026-11-04
 
 - First tagged release: boot2 updater keeping the OpenPak hosts block in step with openpak.org.
